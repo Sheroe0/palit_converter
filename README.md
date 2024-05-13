@@ -1,3 +1,6 @@
+скачать EXE тут https://drive.google.com/file/d/1fbyA2b0CG8f6n9yN28beIEBZxHl0MRUp/view?usp=drive_link
+
+
 https://youtu.be/qFf0rg_LPAs
 https://youtu.be/aMgwrs-ej0o
 
