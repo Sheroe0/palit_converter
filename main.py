@@ -61,6 +61,7 @@ class MainWindow(QWidget):
         super().__init__()
 
         self.image_path = ""
+        self.compare_image_path = ""
         self.converted_image = None
         self.layout = QHBoxLayout()  # Используем горизонтальный макет
         self.setLayout(self.layout)
@@ -72,9 +73,12 @@ class MainWindow(QWidget):
         self.select_button.clicked.connect(self.select_image)
         self.controls_layout.addWidget(self.select_button)
 
+        self.select_compare_button = QPushButton('Выберите изображение для сравнения')
+        self.select_compare_button.clicked.connect(self.select_compare_image)
+        self.controls_layout.addWidget(self.select_compare_button)
+
         self.instructions_label = QLabel("Введите цвета в формате HEX (например, #FFFFFF) в поле ввода ниже.\n"
-                                         "Вы можете ввести несколько цветов, разделив их запятой, решеткой или пробелом.\n"
-                                         "Если поле ввода останется пустым, программа будет закрыта.")
+                                         "Вы можете ввести несколько цветов, разделив их запятой, решеткой или пробелом.")
         self.controls_layout.addWidget(self.instructions_label)
 
         self.palette_entry = QTextEdit()
@@ -109,6 +113,23 @@ class MainWindow(QWidget):
         self.image_label.setFixedSize(600, 600)
         self.preview_layout.addWidget(self.image_label)
 
+        self.compare_layout = QVBoxLayout()  # Вертикальный макет для превью изображения для сравнения
+        self.layout.addLayout(self.compare_layout)
+
+        self.Vimage_status = QLabel("Тут оригинал изображения для сравнения")
+        self.compare_layout.addWidget(self.Vimage_status)
+
+        self.Vyoutube_link = QLabel()
+        self.Vyoutube_link.setText(
+            "<a href='https://youtu.be/aMgwrs-ej0o'>Видео гайд</a>")
+        self.Vyoutube_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.Vyoutube_link.setOpenExternalLinks(True)
+        self.compare_layout.addWidget(self.Vyoutube_link)
+
+        self.compare_image_label = QLabel()
+        self.compare_image_label.setFixedSize(600, 600)
+        self.compare_layout.addWidget(self.compare_image_label)
+
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.update_image)
@@ -137,15 +158,28 @@ class MainWindow(QWidget):
     def select_image(self):
         self.image_path, _ = QFileDialog.getOpenFileName()
         pixmap = QPixmap(self.image_path)
-        pixmap = pixmap.scaled(500, 500, Qt.KeepAspectRatio)
+        pixmap = pixmap.scaled(600, 600, Qt.KeepAspectRatio)
         self.image_label.setPixmap(pixmap)
         self.image_label.setText("")
         self.weight_slider.setValue(1)  # Устанавливаем значение ползунка weight в 1
+        self.compare_image_path = self.image_path  # Копируем изображение для сравнения
+        compare_pixmap = QPixmap(self.compare_image_path)
+        compare_pixmap = compare_pixmap.scaled(600, 600, Qt.KeepAspectRatio)
+        self.compare_image_label.setPixmap(compare_pixmap)
+
+    def select_compare_image(self):
+        self.compare_image_path, _ = QFileDialog.getOpenFileName()
+        compare_pixmap = QPixmap(self.compare_image_path)
+        compare_pixmap = compare_pixmap.scaled(600, 600, Qt.KeepAspectRatio)
+        self.compare_image_label.setPixmap(compare_pixmap)
 
     def convert_image(self):
         if self.image_path:
             self.image_status.setText("Изменяется")
             palette_hex = re.findall(r'([a-fA-F0-9]{6})', self.palette_entry.toPlainText())
+            if not palette_hex:  # Проверяем, пуста ли палитра
+                self.image_status.setText("Палитра пуста. Обработка изображения не запускается.")
+                return
             palette = [hex_to_rgb(color) for color in palette_hex]
             weight = self.weight_slider.value() / 100
             enhance = self.enhance_slider.value() / 50
@@ -153,7 +187,7 @@ class MainWindow(QWidget):
             saturation = self.saturation_slider.value() / 50
             gamma = self.gamma_slider.value() / 50
             back_gamma = self.back_gamma_slider.value() / 50
-            back_saturation = self.back_saturation_slider.value() / 50
+            back_saturation = self.back_saturation_slider.value() / 50 #тут при слишком низких значениях ошибка. не крашится = пофиг
             self.converted_image = replace_colors(self.image_path, palette, weight, enhance, back_enhance, saturation,
                                                   gamma,
                                                   back_gamma, back_saturation)
@@ -164,7 +198,7 @@ class MainWindow(QWidget):
             data.seek(0)
             qimg = QImage.fromData(data.read())
             pixmap = QPixmap.fromImage(qimg)
-            pixmap = pixmap.scaled(500, 500, Qt.KeepAspectRatio)
+            pixmap = pixmap.scaled(600, 600, Qt.KeepAspectRatio)
             self.image_label.setPixmap(pixmap)
             self.image_status.setText("Готово")
 
