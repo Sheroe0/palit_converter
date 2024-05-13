@@ -1,13 +1,21 @@
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QSlider, \
+    QSpinBox, QTextEdit
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import Qt, QTimer
 from PIL import Image, ImageEnhance
 import numpy as np
-import tkinter as tk
-from tkinter import filedialog, Scale, HORIZONTAL
 from scipy.spatial import cKDTree
+import io
+import threading
+import re
+
 
 def hex_to_rgb(hex_color):
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
-def replace_colors(image_path, palette, weight=0.5, enhance = 2, back_enhance = 2, saturation = 1, gamma = 1, back_gamma = 1, back_saturation = 1):
+
+def replace_colors(image_path, palette, weight=0.5, enhance=2, back_enhance=2, saturation=1, gamma=1, back_gamma=1,
+                   back_saturation=1):
     img = Image.open(image_path)
     enhancer = ImageEnhance.Contrast(img)
     img = enhancer.enhance(enhance)  # Увеличиваем контрастность
@@ -44,88 +52,137 @@ def replace_colors(image_path, palette, weight=0.5, enhance = 2, back_enhance = 
     enhancer = ImageEnhance.Color(new_img)
     new_img = enhancer.enhance(back_saturation)
     new_img = new_img.point(lambda p: p ** (1 / back_gamma))
-    new_img.show()
 
-def convert_image():
-    palette_hex = palette_entry.get("1.0", tk.END).split(',')
-    palette = [hex_to_rgb(color.lstrip('#')) for color in palette_hex]
-    image_path = filedialog.askopenfilename()
-    if image_path:
-        weight = weight_scale.get()
-        enhance = enhance_scale.get()
-        back_enhance = back_enhance_scale.get()
-        saturation = saturation_scale.get()
-        gamma = gamma_scale.get()
-        back_gamma = back_gamma_scale.get()
-        back_saturation = back_saturation_scale.get()
-        replace_colors(image_path, palette, weight, enhance, back_enhance, saturation, gamma, back_gamma, back_saturation)
+    return new_img
 
-def show_context_menu(event):
-    context_menu.tk_popup(event.x_root, event.y_root)
 
-root = tk.Tk()
-root.geometry('400x600')
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
 
-palette_label = tk.Label(root, text='Введите цвета палитры через запятую, без пробелов')
-palette_label.pack()
+        self.image_path = ""
+        self.converted_image = None
+        self.layout = QHBoxLayout()  # Используем горизонтальный макет
+        self.setLayout(self.layout)
 
-example_label = tk.Label(root, text='Пример: #FFE5EC,#FFC2D1,#FFB3C6,#FF8FAB,#FB6F92')
-example_label.pack()
+        self.controls_layout = QVBoxLayout()  # Вертикальный макет для элементов управления
+        self.layout.addLayout(self.controls_layout)
 
-palette_entry = tk.Text(root, height=3, width=40)
-palette_entry.pack()
+        self.select_button = QPushButton('Выберите изображение')
+        self.select_button.clicked.connect(self.select_image)
+        self.controls_layout.addWidget(self.select_button)
 
-# Создаем контекстное меню
-context_menu = tk.Menu(root, tearoff=0)
-context_menu.add_command(label="Вставить", command=lambda: palette_entry.event_generate('<<Paste>>'))
+        self.instructions_label = QLabel("Введите цвета в формате HEX (например, #FFFFFF) в поле ввода ниже.\n"
+                                         "Вы можете ввести несколько цветов, разделив их запятой, решеткой или пробелом.\n"
+                                         "Если поле ввода останется пустым, программа будет закрыта.")
+        self.controls_layout.addWidget(self.instructions_label)
 
-# Привязываем контекстное меню к текстовому полю
-palette_entry.bind("<Button-3>", show_context_menu)
+        self.palette_entry = QTextEdit()
+        self.controls_layout.addWidget(self.palette_entry)
 
-# Добавляем ползунки и кнопки для настройки параметров
-weight_label = tk.Label(root, text='Weight')
-weight_label.pack()
-weight_scale = Scale(root, from_=0, to=1, resolution=0.01, orient=HORIZONTAL)
-weight_scale.set(0.5)
-weight_scale.pack()
+        self.save_button = QPushButton('Сохранить картинку')
+        self.save_button.clicked.connect(self.save_image)
+        self.controls_layout.addWidget(self.save_button)
 
-enhance_label = tk.Label(root, text='Enhance')
-enhance_label.pack()
-enhance_scale = Scale(root, from_=0.5, to=4, resolution=0.1, orient=HORIZONTAL)
-enhance_scale.set(1)
-enhance_scale.pack()
+        self.weight_slider = self.create_slider('Weight')
+        self.enhance_slider = self.create_slider('Enhance')
+        self.back_enhance_slider = self.create_slider('Back Enhance')
+        self.saturation_slider = self.create_slider('Saturation')
+        self.back_saturation_slider = self.create_slider('Back Saturation')
+        self.gamma_slider = self.create_slider('Gamma')
+        self.back_gamma_slider = self.create_slider('Back Gamma')
 
-back_enhance_label = tk.Label(root, text='Back Enhance')
-back_enhance_label.pack()
-back_enhance_scale = Scale(root, from_=0.5, to=2, resolution=0.1, orient=HORIZONTAL)
-back_enhance_scale.set(1)
-back_enhance_scale.pack()
+        self.preview_layout = QVBoxLayout()  # Вертикальный макет для превью изображения и статуса
+        self.layout.addLayout(self.preview_layout)
 
-saturation_label = tk.Label(root, text='Saturation')
-saturation_label.pack()
-saturation_scale = Scale(root, from_=0.1, to=4, resolution=0.1, orient=HORIZONTAL)
-saturation_scale.set(1)
-saturation_scale.pack()
+        self.image_status = QLabel("Выберите изображение")
+        self.preview_layout.addWidget(self.image_status)
 
-back_saturation_label = tk.Label(root, text='Back Saturation')
-back_saturation_label.pack()
-back_saturation_scale = Scale(root, from_=0.2, to=2, resolution=0.1, orient=HORIZONTAL)
-back_saturation_scale.set(1)
-back_saturation_scale.pack()
+        self.youtube_link = QLabel()
+        self.youtube_link.setText(
+            "<a href='https://www.youtube.com/channel/UC9eLWczxGDfHbRU2nE4FODA'>Мой YouTube канал</a>")
+        self.youtube_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.youtube_link.setOpenExternalLinks(True)
+        self.preview_layout.addWidget(self.youtube_link)
 
-gamma_label = tk.Label(root, text='Gamma')
-gamma_label.pack()
-gamma_scale = Scale(root, from_=0.7, to=1.3, resolution=0.1, orient=HORIZONTAL)
-gamma_scale.set(1)
-gamma_scale.pack()
+        self.image_label = QLabel()
+        self.image_label.setFixedSize(600, 600)
+        self.preview_layout.addWidget(self.image_label)
 
-back_gamma_label = tk.Label(root, text='Back Gamma')
-back_gamma_label.pack()
-back_gamma_scale = Scale(root, from_=0.7, to=1.3, resolution=0.1, orient=HORIZONTAL)
-back_gamma_scale.set(1)
-back_gamma_scale.pack()
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.update_image)
 
-convert_button = tk.Button(root, text='Запустить конвертацию', command=convert_image)
-convert_button.pack()
+    def create_slider(self, name):
+        label = QLabel(name)
+        self.controls_layout.addWidget(label)
 
-root.mainloop()
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(1)
+        slider.setMaximum(100)
+        slider.setValue(50)
+        slider.valueChanged.connect(lambda: spinbox.setValue(slider.value()))
+        slider.valueChanged.connect(self.start_timer)
+        self.controls_layout.addWidget(slider)
+
+        spinbox = QSpinBox()
+        spinbox.setMinimum(1)
+        spinbox.setMaximum(100)
+        spinbox.setValue(50)
+        spinbox.valueChanged.connect(lambda: slider.setValue(spinbox.value()))
+        self.controls_layout.addWidget(spinbox)
+
+        return slider
+
+    def select_image(self):
+        self.image_path, _ = QFileDialog.getOpenFileName()
+        pixmap = QPixmap(self.image_path)
+        pixmap = pixmap.scaled(500, 500, Qt.KeepAspectRatio)
+        self.image_label.setPixmap(pixmap)
+        self.image_label.setText("")
+        self.weight_slider.setValue(1)  # Устанавливаем значение ползунка weight в 1
+
+    def convert_image(self):
+        if self.image_path:
+            self.image_status.setText("Изменяется")
+            palette_hex = re.findall(r'([a-fA-F0-9]{6})', self.palette_entry.toPlainText())
+            palette = [hex_to_rgb(color) for color in palette_hex]
+            weight = self.weight_slider.value() / 100
+            enhance = self.enhance_slider.value() / 50
+            back_enhance = self.back_enhance_slider.value() / 50
+            saturation = self.saturation_slider.value() / 50
+            gamma = self.gamma_slider.value() / 50
+            back_gamma = self.back_gamma_slider.value() / 50
+            back_saturation = self.back_saturation_slider.value() / 50
+            self.converted_image = replace_colors(self.image_path, palette, weight, enhance, back_enhance, saturation,
+                                                  gamma,
+                                                  back_gamma, back_saturation)
+
+            # Convert PIL Image to QPixmap and display it
+            data = io.BytesIO()
+            self.converted_image.save(data, format='PNG')
+            data.seek(0)
+            qimg = QImage.fromData(data.read())
+            pixmap = QPixmap.fromImage(qimg)
+            pixmap = pixmap.scaled(500, 500, Qt.KeepAspectRatio)
+            self.image_label.setPixmap(pixmap)
+            self.image_status.setText("Готово")
+
+    def save_image(self):
+        if self.image_path and self.converted_image:
+            save_path, _ = QFileDialog.getSaveFileName()
+            if save_path:
+                if not save_path.endswith('.png'):
+                    save_path += '.png'
+                self.converted_image.save(save_path, 'PNG')
+
+    def start_timer(self):
+        self.timer.start(500)  # Запускаем таймер на 500 мс
+
+    def update_image(self):
+        threading.Thread(target=self.convert_image).start()
+
+app = QApplication([])
+window = MainWindow()
+window.show()
+app.exec_()
